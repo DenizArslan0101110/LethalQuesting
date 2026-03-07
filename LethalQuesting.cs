@@ -93,7 +93,7 @@ namespace LethalQuesting
                     Name = parts[0],
                     Target = int.Parse(parts[1]),
                     Collected = 0,
-                    Reward = (int)((10 + int.Parse(parts[2]) / 2.0) * (0.80 * int.Parse(parts[1])/5))
+                    Reward = (int)((10 + int.Parse(parts[2]) / 2.0) * (0.80 + int.Parse(parts[1])/5.0))
                 };
                 LethalQuesting.ScrapQuestData.Value = newData;
             }
