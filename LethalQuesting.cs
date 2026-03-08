@@ -119,7 +119,14 @@ namespace LethalQuesting
         // Calculation of quest reward
         private static int CalculateReward(int count, int totalValue)
         {
-            return (int)((10 + totalValue / 2.0) * (0.80 + count / 5.0));
+            if (count > 11)
+            {   // shit happens sometimes, what if players decide to land on dine
+                return (int)((5 + totalValue * 0.15));
+            }
+            else
+            {
+                return (int)((5 + totalValue * 0.25) * (2.1 + count / 10.0));
+            }
         }
     }
 
@@ -317,7 +324,7 @@ namespace LethalQuesting
 
             myCustomText.text = $"Welcome, land on a moon to see the quests, enjoy the ride!";
             myCustomText.fontSize = 16;
-            myCustomText.color = new Color(1f, 1f, 1f);
+            myCustomText.color = new Color(0.8f, 0.8f, 0.8f);
             myCustomText.alignment = TextAlignmentOptions.Right;
 
             RectTransform rect = textObj.GetComponent<RectTransform>();
