@@ -3,7 +3,7 @@ Do you wish the game had more objectives than just survive the next quota? Letha
 Upon landing a moon, your crew will be assigned a quest which there is a money reward for doing.
 This is a very early version, expect more updates to come.
 ### Features:
-* Quests will request a random type of scrap from the specific moon
+* Quests will request a random type of scrap from the moon you landed on
 ### Planned Features:
 * Monster hunting quests
 * A hotkey to toggle the text on HUD
