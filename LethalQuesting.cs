@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Linq;
 using LethalNetworkAPI;
 using Unity.Netcode;
+using UnityEngine.InputSystem;
+using GameNetcodeStuff;
 using System.IO;
 using System.Reflection;
 using BepInEx.Logging;
@@ -15,19 +17,34 @@ using Image = UnityEngine.UI.Image;
 
 namespace LethalQuesting
 {
+    public enum QuestType
+    {
+        None,
+        Scrap,
+        Kill,
+        GroupSurvival,
+        Betray,
+        MovementProhibition
+    }
     public struct QuestData : INetworkSerializable
     {
-        public string Name;
-        public int Target;
-        public int Collected;
+        public QuestType Type;
+        public string Title;
+        public string TargetName;
+        public int TargetCount;
+        public int CurrentCount;
         public int Reward;
+        public bool IsRewardGiven;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
-            serializer.SerializeValue(ref Name);
-            serializer.SerializeValue(ref Target);
-            serializer.SerializeValue(ref Collected);
+            serializer.SerializeValue(ref Type);
+            serializer.SerializeValue(ref Title);
+            serializer.SerializeValue(ref TargetName);
+            serializer.SerializeValue(ref TargetCount);
+            serializer.SerializeValue(ref CurrentCount);
             serializer.SerializeValue(ref Reward);
+            serializer.SerializeValue(ref IsRewardGiven);
         }
     }
     
@@ -47,59 +64,91 @@ namespace LethalQuesting
             IsCollected = false;
         }
     }
-
-    // handles calculations regarding Collect X scrap quests
+    
     [HarmonyPatch(typeof(RoundManager))]
-    public static class ScrapManager
+    public static class QuestManager
     {
-        // global list of scrap today
-        public static List<ScrapData> TodaysScraps = new List<ScrapData>();
-
+        // decides which quest gets generated for the day
         [HarmonyPatch("SyncScrapValuesClientRpc")]
         [HarmonyPostfix]
-        static void Postfix(Unity.Netcode.NetworkObjectReference[] spawnedScrap, int[] allScrapValue)
+        public static void GenerateDailyQuest(Unity.Netcode.NetworkObjectReference[] spawnedScrap, int[] allScrapValue)
         {
-            LethalQuesting.mls.LogInfo($"Level Loaded");
-            // only host does this
-            if (RoundManager.Instance.IsServer)
+            if (!NetworkManager.Singleton.IsServer) return;
+            
+            //QuestType selectedType = (UnityEngine.Random.value > 0.5f) ? QuestType.Scrap : QuestType.Kill;
+            QuestType selectedType = QuestType.Scrap; 
+
+            if (selectedType == QuestType.Scrap)
             {
-                TodaysScraps.Clear();
+                ScrapManager.ScanMapForScraps(); 
+                GenerateScrapQuest();
+            }
+            else if (selectedType == QuestType.Kill)
+            {
+                // MonsterManager.ScanMapForMonsters(); 
+                // GenerateKillQuest();
+                LethalQuesting.mls.LogInfo("Kill Quest!");
+            }
+        }
 
-                GrabbableObject[] allItems = GameObject.FindObjectsOfType<GrabbableObject>();
+        // Checks scraps and fills in the information needed for a scrap quest
+        private static void GenerateScrapQuest()
+        {
+            var todaysScraps = ScrapManager.TodaysScraps;
+        
+            if (todaysScraps == null || todaysScraps.Count == 0) return;
+            
+            int mode = UnityEngine.Random.Range(0, 3); 
+            string[] parts = ScrapManager.ChooseScrapForQuest(todaysScraps, mode).Split('#');
 
-                foreach (var obj in allItems)
-                {
-                    if (obj == null || !obj.itemProperties.isScrap) continue;
+            if (parts[0] == "None") return;
 
-                    var netObj = obj.GetComponent<NetworkObject>();
-                    if (netObj == null || !netObj.IsSpawned) continue;
+            QuestData newQuest = new QuestData
+            {
+                Type = QuestType.Scrap,
+                TargetName = parts[0],
+                TargetCount = int.Parse(parts[1]),
+                CurrentCount = 0,
+                Reward = CalculateReward(int.Parse(parts[1]), int.Parse(parts[2])),
+                IsRewardGiven = false
+            };
+            
+            LethalQuesting.ScrapQuestData.Value = newQuest;
+            UpdateQuests.UpdateTheQuests(LethalQuesting.ScrapQuestData.Value);
+            LethalQuesting.mls.LogInfo($"New Scrap Quest Generated: {newQuest.TargetName}");
+        }
 
-                    if (obj.isInShipRoom || obj.isHeld) continue;
-                    TodaysScraps.Add(new ScrapData(obj));
-                    LethalQuesting.mls.LogInfo("Added " + obj.itemProperties.itemName);
-                }
+        // Calculation of quest reward
+        private static int CalculateReward(int count, int totalValue)
+        {
+           int averageValue = totalValue / count;
+           return (int)(averageValue * (0.85 + (count * 0.15)));
+        }
+    }
 
-                LethalQuesting.mls.LogInfo($"Map scanned, {TodaysScraps.Count} scraps found.");
-                // 25% chance most valuable scrap, 25% chance most numerous, 50% chance random
-                int ScrapRandom = UnityEngine.Random.Range(1, 5);
-                if (ScrapRandom == 1) ScrapRandom = 0;
-                else if (ScrapRandom == 2) ScrapRandom = 1;
-                else ScrapRandom = 3;
+    // handles calculations regarding Collect X scrap quests
+    public static class ScrapManager
+    {
+        public static List<ScrapData> TodaysScraps = new List<ScrapData>();
 
-                string[] parts = ChooseScrapForQuest(TodaysScraps, ScrapRandom).Split('#');
+        // scans whole map (except the ship and player handhelds) for scrap items
+        public static void ScanMapForScraps()
+        {
+            TodaysScraps.Clear();
+            GrabbableObject[] allItems = GameObject.FindObjectsOfType<GrabbableObject>();
+            foreach (var obj in allItems)
+            {
+                if (obj == null || !obj.itemProperties.isScrap) continue;
 
-                // Postfix içinde (Host kısmı)
-                var newData = new QuestData {
-                    Name = parts[0],
-                    Target = int.Parse(parts[1]),
-                    Collected = 0,
-                    Reward = (int)((10 + int.Parse(parts[2]) / 2.0) * (0.80 + int.Parse(parts[1])/5.0))
-                };
-                LethalQuesting.ScrapQuestData.Value = newData;
+                var netObj = obj.GetComponent<NetworkObject>();
+                if (netObj == null || !netObj.IsSpawned) continue;
+
+                if (obj.isInShipRoom || obj.isHeld) continue;
+                TodaysScraps.Add(new ScrapData(obj));
+                //LethalQuesting.mls.LogInfo("Added " + obj.itemProperties.itemName);
             }
 
-            LethalQuesting.mls.LogInfo("Going to update quests now...");
-            UpdateQuests.UpdateTheQuests(LethalQuesting.ScrapQuestData.Value);
+            LethalQuesting.mls.LogInfo($"Map scanned, {TodaysScraps.Count} scraps found.");
         }
 
         // finds the most common scrap and returns as string "ScrapName#Count#Reward"
@@ -190,12 +239,12 @@ namespace LethalQuesting
             var matchingScrap = TodaysScraps.FirstOrDefault(s => s.NetworkId == netId);
             if (matchingScrap != null && !matchingScrap.IsCollected)
             {
-                if (matchingScrap.Name == LethalQuesting.ScrapQuestData.Value.Name)
+                if (matchingScrap.Name == LethalQuesting.ScrapQuestData.Value.TargetName)
                 {
                     matchingScrap.IsCollected = true;
                     
                     var updatedQuest = LethalQuesting.ScrapQuestData.Value;
-                    updatedQuest.Collected++;
+                    updatedQuest.CurrentCount++;
                     LethalQuesting.ScrapQuestData.Value = updatedQuest;
                 }
             }
@@ -206,6 +255,7 @@ namespace LethalQuesting
     [BepInDependency("LethalNetworkAPI")]
     public class LethalQuesting : BaseUnityPlugin
     {
+        public static bool IsUIVisible = true;
         // Host knows and updates these, clients receive it to know quest progression
         public static LNetworkVariable<QuestData> ScrapQuestData = LNetworkVariable<QuestData>.Create("ScrapQuestData");
 
@@ -264,9 +314,9 @@ namespace LethalQuesting
                 myCustomText.fontSharedMaterial = HUDManager.Instance.controlTipLines[0].fontSharedMaterial;
             }
 
-            myCustomText.text = $"Welcome, land on a moon to see the quests, enjoy the ride!";
+            myCustomText.text = $"Welcome, land on a moon to see the quests, press K to toggle this window, enjoy the ride!";
             myCustomText.fontSize = 16;
-            myCustomText.color = new Color(0.33f, 0.764f, 0.22f);
+            myCustomText.color = new Color(0.8f, 0.8f, 0.8f);
             myCustomText.alignment = TextAlignmentOptions.Right;
 
             RectTransform rect = textObj.GetComponent<RectTransform>();
@@ -283,12 +333,39 @@ namespace LethalQuesting
         public static void UpdateQuestLog(string Quests)
         {
             if (myCustomText == null) CreateTextOnHUD();
-
-            myCustomText.gameObject.SetActive(true);
+            myCustomText.gameObject.SetActive(IsUIVisible);
             myCustomText.transform.SetAsLastSibling();
-
             myCustomText.text = $"{Quests}";
             mls.LogInfo($"Quest log updated!");
+        }
+        
+        [HarmonyPatch(typeof(HUDManager), "Update")]
+        public static class KeyboardShortcutPatch
+        {
+            [HarmonyPostfix]
+            static void Postfix()
+            {
+                try
+                {
+                    // Keyboard.current null ise veya odak oyunda değilse işlem yapma
+                    if (Keyboard.current == null) return;
+
+                    if (Keyboard.current.kKey.wasPressedThisFrame)
+                    {
+                        if (LethalQuesting.myCustomText != null)
+                        {
+                            LethalQuesting.IsUIVisible = !LethalQuesting.IsUIVisible;
+                            LethalQuesting.myCustomText.gameObject.SetActive(LethalQuesting.IsUIVisible);
+                            LethalQuesting.mls.LogInfo($"[LQuesting] Toggle basildi. Yeni durum: {LethalQuesting.IsUIVisible}");
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    // Hata varsa konsolda görelim ki neden çalışmadığını anlayalım
+                    LethalQuesting.mls.LogError($"Update Hatası: {ex}");
+                }
+            }
         }
 
         // a number string returns as one number above
@@ -298,15 +375,11 @@ namespace LethalQuesting
             {
                 return (number + 1).ToString();
             }
-
             return input;
         }
-
-
-
     }
 
-    // makes text appear as soon as hud appears (likely NOT deprecated)
+    // makes text appear as soon as hud appears
     [HarmonyPatch(typeof(HUDManager), "Start")]
     public class HUDManagerPatch
     {
@@ -316,32 +389,66 @@ namespace LethalQuesting
             LethalQuesting.CreateTextOnHUD();
         }
     }
+    
+    [HarmonyPatch(typeof(StartOfRound))]
+    public static class ShipLeavePatch
+    {
+        [HarmonyPatch("EndOfGame")]
+        [HarmonyPostfix]
+        static void SetLobbyText(int bodiesInsured, int connectedPlayersOnServer, int scrapCollected)
+        {
+            string lobbyText = "<color=#CCCCCC>Land on a moon to see the quests, Press K to toggle this window, enjoy the ride!</color>";
+            LethalQuesting.UpdateQuestLog(lobbyText);
+        }
+    }
 
     // Kinda like main function, it is planned to finalize all quests here after their calcs are done
     public class UpdateQuests
     {
         public static void UpdateTheQuests(QuestData data)
         {
+            if (data.Type == QuestType.None) return;
+
+            string statusColor = data.IsRewardGiven ? "green" : "orange";
+            string taskText = "";
             
-            if (string.IsNullOrEmpty(data.Name) || data.Name == "None" || data.Target <= 0) 
+            switch (data.Type)
             {
-                LethalQuesting.mls.LogInfo($"UI update failure!!!");
-                return; 
+                case QuestType.Scrap:
+                    taskText = $"Collect {data.TargetName}: {data.CurrentCount}/{data.TargetCount}";
+                    break;
+                case QuestType.Kill:
+                    taskText = $"Exterminate {data.TargetName}: {data.CurrentCount}/{data.TargetCount}";
+                    break;
+                default:
+                    taskText = $"{data.Title}: {data.CurrentCount}/{data.TargetCount}";
+                    break;
             }
 
-            string ScrapQuestLine = $"Collect {data.Name} ({data.Collected}/{data.Target})\nReward: ■{data.Reward}";
-            // this is not good, we give the reward every time the quest is completed when ui updates
-            // since we only have one quest for the time being this wont cause problem right now but it is inevitably a problem
-            if (data.Collected == data.Target)
+            string finalUI = $"<color={statusColor}>{taskText}</color>\n" +
+                             $"<color={statusColor}>Reward: ■{data.Reward} {(data.IsRewardGiven ? "(Paid)" : "")}";
+
+            LethalQuesting.UpdateQuestLog(finalUI);
+            
+            if (NetworkManager.Singleton.IsServer && data.CurrentCount >= data.TargetCount && !data.IsRewardGiven)
             {
-                Terminal terminal = Object.FindObjectOfType<Terminal>();
+                GiveReward(data);
+            }
+        }
+        
+        private static void GiveReward(QuestData data)
+        {
+            Terminal terminal = Object.FindObjectOfType<Terminal>();
+            if (terminal != null)
+            {
                 terminal.groupCredits += data.Reward; 
                 terminal.SyncGroupCreditsClientRpc(terminal.groupCredits, terminal.numberOfItemsInDropship);
+                data.IsRewardGiven = true;
+                
+                LethalQuesting.ScrapQuestData.Value = data;
+
+                LethalQuesting.mls.LogInfo($"[REWARD] {data.Reward} credits added to terminal.");
             }
-            // UI update
-            LethalQuesting.UpdateQuestLog(ScrapQuestLine);
-        
-            LethalQuesting.mls.LogInfo($"UI update successful");
         }
     }
 }
