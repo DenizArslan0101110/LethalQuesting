@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.Linq;
 using LethalNetworkAPI;
 using Unity.Netcode;
+using UnityEngine.InputSystem;
+using GameNetcodeStuff;
 using System.IO;
 using System.Reflection;
 using BepInEx.Logging;
@@ -119,14 +121,8 @@ namespace LethalQuesting
         // Calculation of quest reward
         private static int CalculateReward(int count, int totalValue)
         {
-            if (count > 11)
-            {   // shit happens sometimes, what if players decide to land on dine
-                return (int)((5 + totalValue * 0.15));
-            }
-            else
-            {
-                return (int)((5 + totalValue * 0.25) * (2.1 + count / 10.0));
-            }
+           int averageValue = totalValue / count;
+           return (int)(averageValue * (0.85 + (count * 0.15)));
         }
     }
 
@@ -134,11 +130,6 @@ namespace LethalQuesting
     public static class ScrapManager
     {
         public static List<ScrapData> TodaysScraps = new List<ScrapData>();
-        
-        static void Postfix()
-        {
-            
-        }
 
         // scans whole map (except the ship and player handhelds) for scrap items
         public static void ScanMapForScraps()
@@ -154,7 +145,7 @@ namespace LethalQuesting
 
                 if (obj.isInShipRoom || obj.isHeld) continue;
                 TodaysScraps.Add(new ScrapData(obj));
-                LethalQuesting.mls.LogInfo("Added " + obj.itemProperties.itemName);
+                //LethalQuesting.mls.LogInfo("Added " + obj.itemProperties.itemName);
             }
 
             LethalQuesting.mls.LogInfo($"Map scanned, {TodaysScraps.Count} scraps found.");
@@ -264,6 +255,7 @@ namespace LethalQuesting
     [BepInDependency("LethalNetworkAPI")]
     public class LethalQuesting : BaseUnityPlugin
     {
+        public static bool IsUIVisible = true;
         // Host knows and updates these, clients receive it to know quest progression
         public static LNetworkVariable<QuestData> ScrapQuestData = LNetworkVariable<QuestData>.Create("ScrapQuestData");
 
@@ -322,7 +314,7 @@ namespace LethalQuesting
                 myCustomText.fontSharedMaterial = HUDManager.Instance.controlTipLines[0].fontSharedMaterial;
             }
 
-            myCustomText.text = $"Welcome, land on a moon to see the quests, enjoy the ride!";
+            myCustomText.text = $"Welcome, land on a moon to see the quests, press K to toggle this window, enjoy the ride!";
             myCustomText.fontSize = 16;
             myCustomText.color = new Color(0.8f, 0.8f, 0.8f);
             myCustomText.alignment = TextAlignmentOptions.Right;
@@ -341,12 +333,39 @@ namespace LethalQuesting
         public static void UpdateQuestLog(string Quests)
         {
             if (myCustomText == null) CreateTextOnHUD();
-
-            myCustomText.gameObject.SetActive(true);
+            myCustomText.gameObject.SetActive(IsUIVisible);
             myCustomText.transform.SetAsLastSibling();
-
             myCustomText.text = $"{Quests}";
             mls.LogInfo($"Quest log updated!");
+        }
+        
+        [HarmonyPatch(typeof(HUDManager), "Update")]
+        public static class KeyboardShortcutPatch
+        {
+            [HarmonyPostfix]
+            static void Postfix()
+            {
+                try
+                {
+                    // Keyboard.current null ise veya odak oyunda değilse işlem yapma
+                    if (Keyboard.current == null) return;
+
+                    if (Keyboard.current.kKey.wasPressedThisFrame)
+                    {
+                        if (LethalQuesting.myCustomText != null)
+                        {
+                            LethalQuesting.IsUIVisible = !LethalQuesting.IsUIVisible;
+                            LethalQuesting.myCustomText.gameObject.SetActive(LethalQuesting.IsUIVisible);
+                            LethalQuesting.mls.LogInfo($"[LQuesting] Toggle basildi. Yeni durum: {LethalQuesting.IsUIVisible}");
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    // Hata varsa konsolda görelim ki neden çalışmadığını anlayalım
+                    LethalQuesting.mls.LogError($"Update Hatası: {ex}");
+                }
+            }
         }
 
         // a number string returns as one number above
@@ -371,6 +390,17 @@ namespace LethalQuesting
         }
     }
     
+    [HarmonyPatch(typeof(StartOfRound))]
+    public static class ShipLeavePatch
+    {
+        [HarmonyPatch("EndOfGame")]
+        [HarmonyPostfix]
+        static void SetLobbyText(int bodiesInsured, int connectedPlayersOnServer, int scrapCollected)
+        {
+            string lobbyText = "<color=#CCCCCC>Land on a moon to see the quests, Press K to toggle this window, enjoy the ride!</color>";
+            LethalQuesting.UpdateQuestLog(lobbyText);
+        }
+    }
 
     // Kinda like main function, it is planned to finalize all quests here after their calcs are done
     public class UpdateQuests
