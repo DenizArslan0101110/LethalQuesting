@@ -1,3 +1,14 @@
+## 1.3.0
+* Made the amount of rewards and quests configurable.
+* Added CSync dependency to sync quest config values between host and client.
+* Made the quest log UI size and position configurable.
+* Made quest log disappear when player opens escape menu.
+* Typing in terminal or text chat no longer triggers quest log toggle.
+
+## 1.2.2
+* Code cleanup in preparation of config options.
+* Reward calculations changed to scale with quota.
+
 ## 1.2.1
 * Added an option to toggle the ui via pressing 'K'.
 * Reward Calculations changed to not be too bountiful on collecting large numbers of scrap.
