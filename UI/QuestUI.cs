@@ -38,9 +38,14 @@ namespace LethalQuesting.UI
                 Plugin.myCustomText.font = HUDManager.Instance.controlTipLines[0].font;
                 Plugin.myCustomText.fontSharedMaterial = HUDManager.Instance.controlTipLines[0].fontSharedMaterial;
             }
-            Plugin.myCustomText.text = $"Press K to toggle quest texts at anytime.";
+            
+            string[] shipTexts = Plugin.ConfigShipText.Value.Split('$');
+            string initialText = shipTexts.Length > 0 ? shipTexts[0] : " ";
+            float initialAlpha = Plugin.ConfigUIAlphaShipText.Value;
+
+            Plugin.myCustomText.text = initialText;
             Plugin.myCustomText.fontSize = Plugin.ConfigUIFontSize.Value;
-            Plugin.myCustomText.color = new Color(0.8f, 0.8f, 0.8f);
+            Plugin.myCustomText.color = new Color(0.8f, 0.8f, 0.8f, initialAlpha);
             Plugin.myCustomText.alignment = TextAlignmentOptions.TopRight;
 
             // 4. positioning and shaping the textbox
@@ -116,10 +121,27 @@ namespace LethalQuesting.UI
         public static void UpdateQuestLog(string Quests)
         {
             if (Plugin.myCustomText == null) CreateTextOnHUD();
+            float alpha = GetTargetAlpha(Quests);
+            Color cur = Plugin.myCustomText.color;
+            Plugin.myCustomText.color = new Color(cur.r, cur.g, cur.b, alpha);
             Plugin.myCustomText.gameObject.SetActive(Plugin.IsUIVisible);
             Plugin.myCustomText.transform.SetAsLastSibling();
             Plugin.myCustomText.text = $"{Quests}";
             if(Plugin.ConfigOutputDebugLogs.Value) Plugin.mls.LogInfo($"UI updated!");
+        }
+        
+        // Sets the text to be transparent if it matches one of the idle texts
+        private static float GetTargetAlpha(string text)
+        {
+            string[] shipTexts = Plugin.ConfigShipText.Value.Split('$');
+            foreach (string s in shipTexts)
+            {
+                if (!string.IsNullOrEmpty(s) && text.Contains(s))
+                {
+                    return Plugin.ConfigUIAlphaShipText.Value;
+                }
+            }
+            return 1f;
         }
     }
 }

@@ -8,20 +8,23 @@ using BepInEx.Logging;
 using CSync.Lib;
 using CSync.Util;
 using CSync.Extensions;
+using LethalCompanyInputUtils.Api;
 // In-Project Files 
 using LethalQuesting.Utils;
+using UnityEngine.InputSystem;
 
 namespace LethalQuesting.Core
 {
     
     [BepInPlugin(GUID, Name, Version)]
+    [BepInDependency("com.rune580.LethalCompanyInputUtils")]
     [BepInDependency("LethalNetworkAPI")]
     [BepInDependency("com.sigurd.csync")]
     public class Plugin : BaseUnityPlugin
     {
         public const string GUID = "com.fighter.lethalquesting";
         public const string Name = "Lethal Questing";
-        public const string Version = "1.3.0";
+        public const string Version = "1.4.0";
         [DataContract]
         public class MyConfig : SyncedConfig2<MyConfig>
         {
@@ -48,11 +51,14 @@ namespace LethalQuesting.Core
         public static ConfigEntry<int> ConfigUIOffsetX { get; set; } = null!;
         public static ConfigEntry<int> ConfigUIOffsetY { get; set; } = null!;
         public static ConfigEntry<int> ConfigUIFontSize { get; set; } = null!;
+        public static ConfigEntry<string> ConfigShipText { get; set; } = null!;
+        public static ConfigEntry<float> ConfigUIAlphaShipText { get; set; } = null!;
         
         public static bool IsUIVisible = true;
         public static bool IsEscMenuOpen = false;
         public static TextMeshProUGUI myCustomText;
         public static ManualLogSource mls;
+        public static UIToggleInputs InputInstance = new UIToggleInputs();
         void Awake()
         {
             Harmony harmony = new Harmony("com.fighter.lethalquesting");
@@ -68,6 +74,8 @@ namespace LethalQuesting.Core
             ConfigUIOffsetX = ConfigBindClamp("UI", "TextBox Horizontal Offset", 10, "Space between right edge of the screen and right edge of the textbox in pixels. (860 is whole screen, 0 is nonexistent)", 0, 860);
             ConfigUIOffsetY = ConfigBindClamp("UI", "TextBox Vertical Offset", 140, "Space between top of the screen and top of the textbox in pixels. (520 is whole screen, 0 is nonexistent)", 0, 520);
             ConfigUIFontSize = ConfigBindClamp("UI", "Text Font Size", 16, "Font size, if you make it too big make sure to scale the text box width and height too so it displays, it's 16 by default", 4, 120);
+            ConfigShipText = Config.Bind<string>("UI", "TextBox Idle Text", "Press K to toggle quest texts at anytime.$This text can be customized with config file of the mod$You can post any ideas, suggestions or complaints to the mod's github issues page.", "A list of strings separated by '$' that will be displayed in the UI in random order when quests are not.");
+            ConfigUIAlphaShipText = ConfigBindClamp("UI", "Ship Text Transparency", 0.20f, "Transparency of the text when displaying idle ship messages (0 is invisible, 1 is solid).", 0f, 1f);
             
             mls = BepInEx.Logging.Logger.CreateLogSource("LQuesting");
             mls.LogInfo("Lethal Questing loaded!");
@@ -86,6 +94,12 @@ namespace LethalQuesting.Core
             ConfigEntry<float> val = ((BaseUnityPlugin)this).Config.Bind<float>(section, key, defaultValue, description);
             val.Value = Mathf.Clamp(val.Value, min, max);
             return val;
+        }
+        
+        public class UIToggleInputs : LcInputActions
+        {
+            [InputAction("<Keyboard>/k", Name = "Toggle Quest UI")]
+            public InputAction ToggleKey { get; set; }
         }
         
         // keep around for now
