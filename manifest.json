@@ -1,6 +1,6 @@
 {
     "name": "Lethal_Questing",
-    "version_number": "1.3.0",
+    "version_number": "1.3.2",
     "website_url": "https://github.com/DenizArslan0101110/LethalQuesting",
     "description": "Assigns daily quests to the crew with credit rewards.",
     "dependencies": [

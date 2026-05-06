@@ -4,13 +4,13 @@ Upon landing on a moon, your crew will be assigned a mission which there is a mo
 This is a rather early version, expect more updates to come.
 ### Features:
 * Quests will request a random type of scrap from the specific moon
-* A hotkey to toggle the text on HUD
+* A hotkey to toggle the text on HUD (can finally be bound to other keys)
 * Config options
 ### Planned Features:
 * ~~Config options~~
 * Monster hunting quests
 * ~~A hotkey to toggle the text on HUD~~
-* Rewarding the crew with scrap items directly for harder quests
+* Rewarding the crew with scrap items directly for harder quests (likely the next feature)
 * Punishing the crew sometimes for failing the quest
 * Enemy specific quests
 * Misc/fun quests
@@ -24,3 +24,8 @@ Especially important to come tell me if you think reward calculations are not ba
 ### Regarding Game Balance
 Its a straight positive for your crew, there are no punishments (for now) for not completing quests only rewards.
 With that being said the rewards are mostly minor but it's still a net positive.
+### Credits
+* Xilophor for LethalNetworkAPI
+* Sigurd for CSync
+* Rune580 for LethalCompany InputUtils
+* People on my github issues page for having better ui design ideas than me
